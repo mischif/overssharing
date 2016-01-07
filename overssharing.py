@@ -7,9 +7,6 @@
 #       Released under version 3.0 of the Non-Profit Open Source License       #
 ################################################################################
 
-# TODO: better calc of necessary primes
-# TODO: Make sure no two primes are used together twice
-
 import random
 import logging
 import argparse
@@ -19,9 +16,9 @@ from struct import pack, unpack
 from math import sqrt, floor, ceil
 from base64 import b64encode, b64decode
 from binascii import hexlify, unhexlify
-from itertools import combinations as choose, izip_longest
+from itertools import combinations as choose, count, izip_longest
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 class CustomLogs(logging.Formatter):
 	FORMATS = {
@@ -274,6 +271,9 @@ class Keypair(object):
 	sk = ""
 	comment = ""
 
+	def __eq__(self, other):
+		return self.n == other.n
+		
 	def __init__(self, p, q, e, comment = None):
 		Util.log.info("Creating new keypair")
 
@@ -297,10 +297,6 @@ class Keypair(object):
 		d = Util.mod_inv(e, phi)
 
 		assert (e * d) % phi == gcd(e, phi) == gcd(d, phi) == 1
-
-		testM = 8675309L
-		testC = pow(testM, e, self.n)
-		assert pow(testC, d, self.n) == testM
 
 		Util.log.debug("p: {}".format(p))
 		Util.log.debug("q: {}".format(q))
@@ -411,7 +407,7 @@ class Keypair(object):
 def make_keys(args):
 	keys = []
 	primes = []
-	primeCount = int(ceil(sqrt(2 * args.count)) + 1)
+	primeCount = next(i for i in count(2) if args.count <= (i * (i - 1) / 2))
 
 	Util.log.info("Making {} {}-bit keys with exponent {}".format(
 		args.count, args.bits, args.exp))
@@ -425,7 +421,21 @@ def make_keys(args):
 	Util.log.info("Generating keys...")
 	while len(keys) < args.count:
 		p, q = Util.r.sample(primes, 2)
-		keys.append(Keypair(p, q, args.exp))
+
+		# First, make sure we don't get the same prime twice
+		if p == q:
+			Util.log.warning("Got the same prime twice")
+			continue
+
+		kp = Keypair(p, q, args.exp)
+
+		# Then, make sure we haven't gotten this pair of primes already
+		if kp in keys:
+			Util.log.warning("Got the same pair of primes multiple times")
+			continue
+
+		# Seems legit
+		keys.append(kp)
 
 	Util.log.info("Writing keys...")
 	for key in keys:
